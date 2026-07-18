@@ -82,8 +82,15 @@ exemplos/lib/audit.ts                Log de auditoria fire-and-forget
 exemplos/lib/market-crypto.ts        Cotações (CoinGecko + dólar com fallback PTAX/BCB)
 
 exemplos/ui/…                        Componentes do design system (Select, DatePicker, CurrencyInput)
+
+docs/arquitetura.md                  Diagramas (Mermaid) da arquitetura e do gate de rotas
+docs/seguranca.md                    As 6 camadas de segurança, do transporte à auditoria
+docs/pagamentos.md                   Fluxo completo da assinatura recorrente (sequence diagram)
 docs/escopo.md                       Escopo original do produto
 ```
+
+**Comece por aqui:** [`docs/arquitetura.md`](docs/arquitetura.md) →
+[`docs/seguranca.md`](docs/seguranca.md) → [`docs/pagamentos.md`](docs/pagamentos.md)
 
 ## Roadmap
 
