@@ -1,0 +1,396 @@
+// Modelo de dados — Saldo+ (baseado na seção 5 do escopo).
+// Isolamento multi-tenant por `workspaceId`; o RLS do Postgres (Supabase)
+// garante o isolamento no nível do banco.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WorkspaceTipo {
+  pessoal
+  familia
+}
+
+enum Papel {
+  owner
+  admin
+  membro
+}
+
+enum CategoriaTipo {
+  receita
+  despesa
+}
+
+enum TransactionTipo {
+  receita
+  despesa
+  transferencia
+}
+
+enum TransactionStatus {
+  previsto
+  realizado
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
+enum SplitMode {
+  igual
+  percentual
+  valores
+}
+
+// Espelha auth.users do Supabase (id = UUID do Supabase Auth).
+model User {
+  id        String       @id @db.Uuid
+  email     String       @unique
+  nome      String?
+  fotoUrl   String?      @map("foto_url")
+  createdAt DateTime     @default(now()) @map("created_at")
+  ownedWorkspaces Workspace[]  @relation("WorkspaceOwner")
+  memberships     Membership[]
+  splitShares     TransactionSplitShare[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id        String        @id @default(uuid()) @db.Uuid
+  nome      String
+  tipo      WorkspaceTipo @default(pessoal)
+  ownerId   String        @map("owner_id") @db.Uuid
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  owner         User           @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  memberships   Membership[]
+  invites       WorkspaceInvite[]
+  accounts      Account[]
+  creditCards   CreditCard[]
+  categories    Category[]
+  transactions  Transaction[]
+  recurrences   Recurrence[]
+  subscription  Subscription?
+  alerts        Alert[]
+  pluggyItems   PluggyItem[]
+  budgets       Budget[]
+
+  @@map("workspaces")
+}
+
+// --- Open Finance (Pluggy) — camada espelho, somente leitura ---
+// Um "item" é uma conexão do usuário com um banco (1 login → N contas).
+// Os dados vêm do Pluggy e ficam separados dos lançamentos manuais.
+model PluggyItem {
+  id              String    @id // id do item no Pluggy
+  workspaceId     String    @map("workspace_id") @db.Uuid
+  connectorId     Int       @map("connector_id")
+  connectorName   String?   @map("connector_name")
+  connectorImage  String?   @map("connector_image")
+  status          String?
+  executionStatus String?   @map("execution_status")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  accounts  PluggyAccount[]
+
+  @@index([workspaceId])
+  @@map("pluggy_items")
+}
+
+model PluggyAccount {
+  id            String   @id // id da conta no Pluggy
+  itemId        String   @map("item_id")
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  type          String?
+  subtype       String?
+  nome          String?
+  marketingName String?  @map("marketing_name")
+  numero        String?
+  saldo         Decimal? @db.Decimal(18, 2)
+  moeda         String?  @default("BRL")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  item         PluggyItem          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  transactions PluggyTransaction[]
+
+  @@index([itemId])
+  @@index([workspaceId])
+  @@map("pluggy_accounts")
+}
+
+model PluggyTransaction {
+  id          String   @id // id da transação no Pluggy
+  accountId   String   @map("account_id")
+  workspaceId String   @map("workspace_id") @db.Uuid
+  descricao   String?
+  valor       Decimal  @db.Decimal(18, 2)
+  data        DateTime @db.Date
+  tipo        String? // CREDIT | DEBIT
+  categoria   String?
+  moeda       String?  @default("BRL")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  account PluggyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([workspaceId, data])
+  @@map("pluggy_transactions")
+}
+
+model Membership {
+  id                    String  @id @default(uuid()) @db.Uuid
+  workspaceId           String  @map("workspace_id") @db.Uuid
+  userId                String  @map("user_id") @db.Uuid
+  papel                 Papel   @default(membro)
+  // Só tem efeito em memberships de workspace `familia`: se a parte do
+  // usuário nas despesas divididas entra no resumo do workspace pessoal dele.
+  incluirNoIndividual   Boolean @default(true) @map("incluir_no_individual")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("memberships")
+}
+
+// Convite pendente para um workspace em família (até 5 membros).
+model WorkspaceInvite {
+  id              String       @id @default(uuid()) @db.Uuid
+  workspaceId     String       @map("workspace_id") @db.Uuid
+  email           String
+  papel           Papel        @default(membro)
+  token           String       @unique
+  status          InviteStatus @default(pending)
+  invitedByUserId String       @map("invited_by_user_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  expiresAt       DateTime     @map("expires_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("workspace_invites")
+}
+
+model Account {
+  id           String  @id @default(uuid()) @db.Uuid
+  workspaceId  String  @map("workspace_id") @db.Uuid
+  nome         String
+  tipo         String
+  banco        String? // slug do registro em src/lib/banks.ts (logo da conta)
+  saldoInicial Decimal @default(0) @map("saldo_inicial") @db.Decimal(14, 2)
+  moeda        String  @default("BRL")
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([workspaceId])
+  @@map("accounts")
+}
+
+model CreditCard {
+  id            String @id @default(uuid()) @db.Uuid
+  workspaceId   String @map("workspace_id") @db.Uuid
+  nome          String
+  limite        Decimal @db.Decimal(14, 2)
+  diaFechamento Int     @map("dia_fechamento")
+  diaVencimento Int     @map("dia_vencimento")
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  invoices     Invoice[]
+
+  @@index([workspaceId])
+  @@map("credit_cards")
+}
+
+model Category {
+  id          String        @id @default(uuid()) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  nome        String
+  tipo        CategoriaTipo
+  cor         String?
+  icone       String?
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  budget       Budget?
+
+  @@index([workspaceId])
+  @@map("categories")
+}
+
+// Orçamento mensal por categoria (meta de gasto). Um por categoria.
+model Budget {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  categoryId  String   @unique @map("category_id") @db.Uuid
+  valorMensal Decimal  @map("valor_mensal") @db.Decimal(14, 2)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("budgets")
+}
+
+model Transaction {
+  id              String            @id @default(uuid()) @db.Uuid
+  workspaceId     String            @map("workspace_id") @db.Uuid
+  accountId       String?           @map("account_id") @db.Uuid
+  cardId          String?           @map("card_id") @db.Uuid
+  categoryId      String?           @map("category_id") @db.Uuid
+  tipo            TransactionTipo
+  valor           Decimal           @db.Decimal(14, 2)
+  dataCompetencia DateTime          @map("data_competencia") @db.Date
+  dataVencimento  DateTime?         @map("data_vencimento") @db.Date
+  status          TransactionStatus @default(previsto)
+  descricao       String?
+  recurrenceId    String?           @map("recorrencia_id") @db.Uuid
+  transferGroupId String?           @map("transfer_group_id") @db.Uuid
+  installmentId   String?           @map("installment_id") @db.Uuid
+  parcelaNum      Int?              @map("parcela_num")
+  parcelaTotal    Int?              @map("parcela_total")
+  splitMode       SplitMode?        @map("split_mode")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  workspace   Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account     Account?                @relation(fields: [accountId], references: [id])
+  card        CreditCard?             @relation(fields: [cardId], references: [id])
+  category    Category?               @relation(fields: [categoryId], references: [id])
+  recurrence  Recurrence?             @relation(fields: [recurrenceId], references: [id])
+  alerts      Alert[]
+  splitShares TransactionSplitShare[]
+
+  @@index([workspaceId])
+  @@index([dataVencimento])
+  @@map("transactions")
+}
+
+// Fatia de cada membro numa despesa dividida (`Transaction.splitMode`).
+// Calculada e congelada no momento da criação — não recalcula
+// retroativamente se a família ganhar/perder membro depois.
+model TransactionSplitShare {
+  id            String  @id @default(uuid()) @db.Uuid
+  transactionId String  @map("transaction_id") @db.Uuid
+  userId        String  @map("user_id") @db.Uuid
+  valor         Decimal @db.Decimal(14, 2)
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([transactionId, userId])
+  @@index([userId])
+  @@map("transaction_split_shares")
+}
+
+// `indeterminada`: sem data de término (ex.: assinatura) — o cron
+// `/api/cron/recurrences` usa os campos-modelo abaixo pra criar a próxima
+// ocorrência a cada `regra` a partir de `proximaData`, indefinidamente até
+// o usuário excluir a série (o que apaga esta linha).
+model Recurrence {
+  id             String           @id @default(uuid()) @db.Uuid
+  workspaceId    String           @map("workspace_id") @db.Uuid
+  regra          String
+  proximaData    DateTime         @map("proxima_data") @db.Date
+  ativo          Boolean          @default(true)
+  indeterminada  Boolean          @default(false)
+
+  // modelo pra gerar as próximas ocorrências (só usado se `indeterminada`)
+  tipo       TransactionTipo?
+  valor      Decimal?          @db.Decimal(14, 2)
+  descricao  String?
+  categoryId String?           @map("category_id") @db.Uuid
+  accountId  String?           @map("account_id") @db.Uuid
+  cardId     String?           @map("card_id") @db.Uuid
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([workspaceId])
+  @@map("recurrences")
+}
+
+model Invoice {
+  id         String   @id @default(uuid()) @db.Uuid
+  cardId     String   @map("card_id") @db.Uuid
+  mesRef     String   @map("mes_ref")
+  valorTotal Decimal  @map("valor_total") @db.Decimal(14, 2)
+  status     String
+  vencimento DateTime @db.Date
+
+  card CreditCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@map("invoices")
+}
+
+// Log de auditoria — ações administrativas sensíveis (conceder/revogar
+// assinatura, etc.). Append-only; nunca editar/apagar em produção.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// "admin" (ações no painel), "security" (login/senha/MFA) ou "system" (eventos do app)
+  category   String   @default("admin")
+  actorEmail String   @map("actor_email")
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  details    Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@map("audit_logs")
+}
+
+model Subscription {
+  id                   String             @id @default(uuid()) @db.Uuid
+  workspaceId          String             @unique @map("workspace_id") @db.Uuid
+  plano                String
+  status               SubscriptionStatus @default(trialing)
+  trialEndsAt          DateTime?          @map("trial_ends_at")
+  gatewayCustomerId    String?            @map("gateway_customer_id")
+  gatewaySubscriptionId String?           @map("gateway_subscription_id")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Alert {
+  id            String    @id @default(uuid()) @db.Uuid
+  workspaceId   String    @map("workspace_id") @db.Uuid
+  transactionId String?   @map("transaction_id") @db.Uuid
+  canal         String
+  enviarEm      DateTime  @map("enviar_em")
+  enviado       Boolean   @default(false)
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("alerts")
+}
