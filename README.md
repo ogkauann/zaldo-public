@@ -66,14 +66,23 @@ o que já foi pago, o que vence hoje e quanto sobra até o fim do mês.
 ## O que tem neste repositório
 
 ```
-prisma/schema.prisma        Modelo de dados completo (multi-tenant, assinaturas, divisão familiar)
-prisma/rls.sql              Políticas de Row Level Security + storage de avatares
-exemplos/lib/finance.ts     Núcleo de juros compostos do simulador (puro, testado)
-exemplos/lib/split-calc.ts  Divisão de despesas em centavos, sem erro de arredondamento
-exemplos/lib/audit.ts       Log de auditoria fire-and-forget
-exemplos/api/…              Exemplo de Route Handler (busca com prévia)
-exemplos/ui/…               Componentes do design system (Select, DatePicker, CurrencyInput)
-docs/escopo.md              Escopo original do produto
+prisma/schema.prisma                 Modelo de dados completo (multi-tenant, assinaturas, divisão familiar)
+prisma/rls.sql                       Políticas de Row Level Security + storage de avatares
+
+exemplos/api/webhook-mercadopago.ts  Webhook de assinaturas: validação HMAC (x-signature) e
+                                     re-busca do estado na API — nunca confia no payload
+exemplos/api/cron-recurrences.ts     Cron protegido por Bearer secret (comparação em tempo
+                                     constante) que materializa as contas fixas do mês
+exemplos/api/export-csv.ts           Export dos lançamentos em CSV, escopado pelo workspace
+exemplos/api/search-transactions.ts  Busca com prévia ao vivo usada na topbar
+
+exemplos/lib/finance.ts              Núcleo de juros compostos do simulador (puro, testado)
+exemplos/lib/split-calc.ts           Divisão de despesas em centavos, sem erro de arredondamento
+exemplos/lib/audit.ts                Log de auditoria fire-and-forget
+exemplos/lib/market-crypto.ts        Cotações (CoinGecko + dólar com fallback PTAX/BCB)
+
+exemplos/ui/…                        Componentes do design system (Select, DatePicker, CurrencyInput)
+docs/escopo.md                       Escopo original do produto
 ```
 
 ## Roadmap
