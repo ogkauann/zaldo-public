@@ -106,3 +106,5 @@ sem cartão), reporte bugs e mande ideias. Todo feedback é respondido.
 
 © Kauan — todos os direitos reservados. Este repositório existe para fins de demonstração;
 o código aqui publicado não pode ser reutilizado comercialmente sem autorização.
+
+<!-- mantido por @ogkauann -->
