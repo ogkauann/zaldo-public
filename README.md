@@ -108,3 +108,4 @@ sem cartão), reporte bugs e mande ideias. Todo feedback é respondido.
 o código aqui publicado não pode ser reutilizado comercialmente sem autorização.
 
 <!-- mantido por @ogkauann -->
+<!-- revisado com @developerandreo -->
