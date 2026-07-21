@@ -4,7 +4,7 @@
 > amostra curada (modelo de dados, políticas de segurança e trechos representativos) para quem
 > quer entender como o sistema funciona por trás.
 >
-> 🌐 Teste grátis: **[zaldo.com.br](https://zaldo.com.br)** · 📧 Contato: comercial.ogkauann@gmail.com
+> 🌐 Teste grátis: **[zaldo.com.br](https://zaldo.com.br)** · 📧 Contato: suporte@zaldo.com.br
 
 ## O problema
 
